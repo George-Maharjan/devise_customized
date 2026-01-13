@@ -1,0 +1,21 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  username: <%= ENV.fetch("DB_USERNAME") { "georgemaharjan" } %>
+  password: <%= ENV.fetch("DB_PASSWORD") { "" } %>
+  host: localhost
+
+development:
+  <<: *default
+  database: devise_auth_demo_development
+
+test:
+  <<: *default
+  database: devise_auth_demo_test
+
+production:
+  <<: *default
+  database: devise_auth_demo_production
+  username: devise_auth_demo
+  password: <%= ENV["DEVISE_AUTH_DEMO_DATABASE_PASSWORD"] %>

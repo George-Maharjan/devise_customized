@@ -1,0 +1,58 @@
+<div class="home-page">
+  <section class="hero">
+    <h1>Welcome to DeviseApp</h1>
+
+    <% if user_signed_in? %>
+      <p>Hello, <%= current_user.email %>! Welcome back.</p>
+      <%= link_to "Create New Blog", new_blog_path, class: "btn btn-primary" %>
+    <% else %>
+      <p>Share your thoughts with the world</p>
+      <div class="hero-actions">
+        <%= link_to "Get Started", new_user_registration_path, class: "btn btn-primary" %>
+        <%= link_to "Learn More", blogs_path, class: "btn btn-secondary" %>
+      </div>
+    <% end %>
+  </section>
+
+  <!-- Conditional Content Based on Authentication -->
+  <% if user_signed_in? %>
+    <section class="user-section">
+      <h2>Your Recent Blogs</h2>
+      <% if @user_blogs.any? %>
+        <div class="blog-grid">
+          <% @user_blogs.each do |blog| %>
+            <div class="blog-card">
+              <h3><%= link_to blog.title, blog %></h3>
+              <p><%= truncate(blog.description, length: 100) %></p>
+              <div class="blog-actions">
+                <%= link_to "Edit", edit_blog_path(blog), class: "btn-small" %>
+                <%= link_to "Delete", blog_path(blog),
+                            data: { turbo_method: :delete, turbo_confirm: "Are you sure?" },
+                            class: "btn-small btn-danger" %>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      <% else %>
+        <p>You haven't created any blogs yet.</p>
+        <%= link_to "Create Your First Blog", new_blog_path, class: "btn btn-primary" %>
+      <% end %>
+    </section>
+  <% end %>
+
+  <!-- Public Section - Visible to Everyone -->
+  <section class="public-section">
+    <h2>Recent Blogs from Our Community</h2>
+    <div class="blog-grid">
+      <% @recent_blogs.each do |blog| %>
+        <div class="blog-card">
+          <h3><%= link_to blog.title, blog %></h3>
+          <p><%= truncate(blog.description, length: 100) %></p>
+          <% if blog.user %>
+            <small>By <%= blog.user.username %></small>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  </section>
+</div>

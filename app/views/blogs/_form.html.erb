@@ -1,0 +1,29 @@
+<%= form_with(model: blog, local: true, style: "max-width: 600px;") do |form| %>
+  <% if blog.errors.any? %>
+    <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+      <h3 style="margin-top: 0;">
+        <%= pluralize(blog.errors.count, "error") %> prohibited this blog from being saved:
+      </h3>
+      <ul style="margin-bottom: 0;">
+        <% blog.errors.full_messages.each do |message| %>
+          <li><%= message %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <div style="margin-bottom: 20px;">
+    <%= form.label :title, style: "display: block; margin-bottom: 5px; font-weight: bold;" %>
+    <%= form.text_field :title, style: "width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px;" %>
+  </div>
+
+  <div style="margin-bottom: 20px;">
+    <%= form.label :description, style: "display: block; margin-bottom: 5px; font-weight: bold;" %>
+    <%= form.text_area :description, rows: 10, style: "width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; font-family: inherit;" %>
+  </div>
+
+  <div style="display: flex; gap: 10px;">
+    <%= form.submit style: "background: #28a745; color: white; padding: 10px 30px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px;" %>
+    <%= link_to "Cancel", blogs_path, style: "background: #6c757d; color: white; padding: 10px 30px; text-decoration: none; border-radius: 4px; display: inline-block;" %>
+  </div>
+<% end %>

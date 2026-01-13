@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>DeviseAuthDemo</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+
+    <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
+    <%= javascript_importmap_tags %>
+  </head>
+
+  <body>
+    <!-- Navigation -->
+    <%= render 'shared/navigation' %>
+
+    <!-- Flash Messages Container -->
+    <% if notice || alert %>
+      <div class="flash-messages">
+        <% if notice %>
+          <div class="flash-message flash-notice">
+            <%= notice %>
+            <button class="flash-close" onclick="this.parentElement.remove()">×</button>
+          </div>
+        <% end %>
+
+        <% if alert %>
+          <div class="flash-message flash-alert">
+            <%= alert %>
+            <button class="flash-close" onclick="this.parentElement.remove()">×</button>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+
+    <!-- Main Content -->
+    <main class="container">
+      <%= yield %>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>&copy; 2026 Devise Demo App. Built with Rails and Devise.</p>
+    </footer>
+  </body>
+</html>

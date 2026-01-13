@@ -1,0 +1,27 @@
+<div class="container" style="max-width: 800px; margin: 0 auto; padding: 20px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+    <h1>Blogs</h1>
+  </div>
+
+  <% if @blogs.any? %>
+    <% @blogs.each do |blog| %>
+      <div style="border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; border-radius: 8px; background: white;">
+        <h2 style="margin-top: 0;">
+          <%= link_to blog.title, blog_path(blog), style: "text-decoration: none; color: #333;" %>
+        </h2>
+        <p style="color: #666; margin-bottom: 15px;">
+          <%= truncate(blog.description, length: 200) %>
+        </p>
+        <div style="display: flex; gap: 10px;">
+          <%= link_to "View", blog_path(blog), style: "color: #007bff; text-decoration: none;" %>
+          <% if blog.user == current_user %>
+            <%= link_to "Edit", edit_blog_path(blog), style: "color: #ffc107; text-decoration: none;" %>
+            <%= link_to "Delete", blog_path(blog), data: { turbo_method: :delete, turbo_confirm: "Are you sure?" }, style: "color: #dc3545; text-decoration: none;" %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  <% else %>
+    <p style="text-align: center; color: #666; padding: 40px;">No blogs yet. <%= link_to "Create one", new_blog_path if user_signed_in? %></p>
+  <% end %>
+</div>
