@@ -204,6 +204,8 @@ GEM
     public_suffix (7.0.2)
     puma (7.1.0)
       nio4r (~> 2.0)
+    pundit (2.5.2)
+      activesupport (>= 3.0.0)
     racc (1.8.1)
     rack (3.2.4)
     rack-session (2.1.1)
@@ -322,6 +324,7 @@ DEPENDENCIES
   letter_opener (~> 1.8)
   pg (~> 1.5)
   puma (>= 5.0)
+  pundit (~> 2.3)
   rails (~> 7.1.6)
   selenium-webdriver
   sprockets-rails
