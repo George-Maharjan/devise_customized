@@ -1,6 +1,7 @@
 class BlogsController < ApplicationController
   before_action :authenticate_user!, only: [:new, :create, :edit, :update, :destroy]
   before_action :set_blog, only: [:show, :edit, :update, :destroy]
+  before_action :authorize_blog, only: [:edit, :update, :destroy]
 
   def index
     @blogs = Blog.all.order(created_at: :desc)
@@ -11,6 +12,7 @@ class BlogsController < ApplicationController
 
   def new
     @blog = current_user.blogs.build
+    authorize @blog
   end
 
   def edit
@@ -18,6 +20,7 @@ class BlogsController < ApplicationController
 
   def create
     @blog = current_user.blogs.build(blog_params)
+    authorize @blog
 
     if @blog.save
       redirect_to @blog, notice: 'Blog was successfully created.'
@@ -43,6 +46,10 @@ class BlogsController < ApplicationController
 
   def set_blog
     @blog = Blog.find(params[:id])
+  end
+
+  def authorize_blog
+    authorize @blog
   end
 
   def blog_params
