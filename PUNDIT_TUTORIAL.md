@@ -97,27 +97,7 @@ end
 6. `user_not_authorized` is called
 7. User sees flash message and redirects
 
-### Step 3: Test the Error Handler
-
-```ruby
-# test/controllers/blogs_controller_test.rb
-test "reader cannot delete blog" do
-  reader = users(:reader)
-  blog = blogs(:one)
-  sign_in reader
-
-  delete blog_path(blog)
-
-  # Check that error handler worked
-  assert_redirected_to root_path
-  assert_includes flash[:alert], "not authorized"
-
-  # Blog still exists (wasn't deleted)
-  assert Blog.exists?(blog.id)
-end
-```
-
-### Step 4: Customize Error Responses
+### Step 3: Customize Error Responses
 
 For different controllers, you can customize error handling:
 
@@ -175,19 +155,23 @@ User sees message and stays on previous page
 
 ### Step 1: Add authorization_message to Policy
 
+Implement `authorization_message(action)` that accepts the action being attempted:
+
 ```ruby
 # app/policies/blog_policy.rb
 class BlogPolicy < ApplicationPolicy
-  def authorization_message
-    # Check different conditions and return appropriate message
-    if !user.present?
-      "You must be logged in to perform this action"
-    elsif record.published?
-      "Cannot edit published blogs"
-    elsif !own_blog? && !user&.admin?
-      "Only the blog owner can edit this"
+  def authorization_message(action = nil)
+    case action
+    when :show
+      "This blog post is not available for viewing. Only published posts and your own drafts are visible."
+    when :create, :new
+      "You do not have permission to create blogs. Only authors and administrators can create posts."
+    when :update, :edit
+      "You can only edit your own blog posts. Administrators can edit any post."
+    when :destroy
+      "You can only delete your own blog posts. Administrators can delete any post."
     else
-      "You are not authorized"
+      "You are not authorized to perform this action on this blog."
     end
   end
 
@@ -201,107 +185,175 @@ end
 
 ### Step 2: Update ApplicationController to Use Custom Messages
 
+The error handler extracts the action name from the exception and passes it to the policy:
+
 ```ruby
 # app/controllers/application_controller.rb
 class ApplicationController < ActionController::Base
+  include Pundit::Authorization
+
   rescue_from Pundit::NotAuthorizedError, with: :user_not_authorized
 
   private
 
   def user_not_authorized(exception)
-    # Try to get custom message from policy
-    policy_obj = exception.policy
-    error_message = if policy_obj.respond_to?(:authorization_message)
-                      policy_obj.authorization_message
-                    else
-                      "You are not authorized"
-                    end
+    # Extract the action name from the exception query method
+    # e.g., "index?" becomes :index
+    action = exception.query.to_s.gsub('?', '').to_sym if exception.query
 
-    respond_to do |format|
-      format.html do
-        flash[:alert] = error_message
-        redirect_to request.referrer || root_path
-      end
-
-      format.json do
-        render json: { error: error_message }, status: :forbidden
-      end
+    # Get the policy instance and custom message
+    policy = exception.policy
+    if policy && policy.respond_to?(:authorization_message)
+      flash[:alert] = policy.authorization_message(action)
+    else
+      flash[:alert] = "You are not authorized to perform this action."
     end
+
+    redirect_to(request.referrer || root_path)
   end
 end
 ```
 
-### Step 3: Test Different Messages
+**How it works:**
+- When `authorize @blog` fails on a destroy action, Pundit raises `NotAuthorizedError`
+- The exception has `.query` set to `"destroy?"` and `.policy` with the policy instance
+- Extract `:destroy` from `"destroy?"` by removing the `?` and converting to symbol
+- Call `policy.authorization_message(:destroy)` to get the specific message
+- Show user the contextual error message
 
-```ruby
-# test/policies/blog_policy_test.rb
-test "message for anonymous user" do
-  policy = BlogPolicy.new(nil, blogs(:one))
-  assert_includes policy.authorization_message, "logged in"
-end
-
-test "message for non-owner trying to edit" do
-  reader = users(:reader)
-  blog = blogs(:draft_by_author)
-
-  policy = BlogPolicy.new(reader, blog)
-  assert_includes policy.authorization_message, "blog owner"
-end
-
-test "message for trying to edit published blog" do
-  author = blogs(:published).user
-  policy = BlogPolicy.new(author, blogs(:published))
-  assert_includes policy.authorization_message, "published"
-end
-```
-
-### Step 4: Real Project Examples
+### Step 3: Real Project Examples with Action-Specific Messages
 
 ```ruby
 # app/policies/user_policy.rb
 class UserPolicy < ApplicationPolicy
-  def authorization_message
-    if !user&.admin?
-      "Only administrators can manage users"
-    elsif record.id == user.id
-      "Admins cannot modify themselves"
+  def authorization_message(action = nil)
+    case action
+    when :index
+      "You do not have permission to view the user list. Only administrators can access this."
+    when :show
+      if !user.present?
+        "You must be logged in to view user details"
+      elsif user.id != record.id && !user&.admin?
+        "You can only view your own profile"
+      else
+        "You are not authorized to view this user"
+      end
+    when :edit, :update
+      if !user.present?
+        "You must be logged in to edit user details"
+      elsif user.id != record.id && !user&.admin?
+        "You can only edit your own profile"
+      else
+        "You are not authorized to edit this user"
+      end
+    when :assign_role
+      if !user&.admin?
+        "Only administrators can assign roles"
+      else
+        "You are not authorized to assign roles"
+      end
+    when :deactivate
+      if !user&.admin?
+        "Only administrators can deactivate users"
+      elsif record.id == user.id
+        "You cannot deactivate your own account"
+      else
+        "You are not authorized to deactivate this user"
+      end
+    when :activate
+      if !user&.admin?
+        "Only administrators can activate users"
+      elsif record.id == user.id
+        "You cannot activate your own account"
+      else
+        "You are not authorized to activate this user"
+      end
     else
-      "You are not authorized"
+      "You are not authorized to perform this action on users"
     end
   end
 end
 
-# app/policies/admin_policy.rb
+# app/policies/admin_policy.rb (Headless)
 class AdminPolicy < ApplicationPolicy
   def initialize(user)
     @user = user
     @record = nil
   end
 
-  def authorization_message
-    "Only administrators can access this section"
+  def authorization_message(action = nil)
+    case action
+    when :index
+      "You do not have permission to access the admin dashboard. Only administrators can access this section."
+    when :manage_users
+      "You do not have permission to manage users. Only administrators can manage users."
+    when :assign_role
+      "You do not have permission to assign roles. Only administrators can assign roles."
+    when :deactivate_user
+      "You do not have permission to deactivate users. Only administrators can perform this action."
+    when :activate_user
+      "You do not have permission to activate users. Only administrators can perform this action."
+    when :view_analytics
+      "You do not have permission to view analytics. Only administrators can access this."
+    else
+      "You are not authorized to access this admin section."
+    end
   end
 end
 ```
 
-### User Experience Improvement
+### User Experience Improvement with Action-Specific Messages
 
-**Before:**
+**Before (Generic Message):**
 ```
-User tries to edit another's draft
+Reader tries to create blog
 ↓
-"You are not authorized"
+"You are not authorized to perform this action."
 ↓
-User is confused - why not?
+User is confused - why can't I create?
+
+Reader tries to view another's draft
+↓
+"You are not authorized to perform this action."
+↓
+User doesn't know why
+
+Admin tries to deactivate own account
+↓
+"You are not authorized to perform this action."
+↓
+Admin doesn't know if it's a permission or role issue
 ```
 
-**After:**
+**After (Action-Specific Messages):**
 ```
-User tries to edit another's draft
+Reader tries to create blog
 ↓
-"Only the blog owner can edit this"
+"You do not have permission to create blogs. Only authors and administrators can create posts."
 ↓
-User understands immediately
+User knows to ask admin for author role
+
+Reader tries to view another's draft
+↓
+"This blog post is not available for viewing. Only published posts and your own drafts are visible."
+↓
+User understands the visibility rules
+
+Admin tries to deactivate own account
+↓
+"You cannot deactivate your own account"
+↓
+Admin knows it's by design for safety
+```
+
+**How Exception Handler Maps Actions to Messages:**
+```
+User action         Exception.query    Extracted action    Message from policy
+─────────────────   ────────────────   ────────────────    ────────────────────────
+destroy blog        "destroy?"         :destroy            "You can only delete your own blog posts..."
+edit user           "edit?"            :edit               "You can only edit your own profile"
+create blog         "create?"          :create             "Only authors and administrators can create posts"
+activate user       "activate?"        :activate           "You cannot activate your own account"
 ```
 
 ---
@@ -321,6 +373,12 @@ end
 # Draft blogs visible to all users!
 ```
 
+Scope problems manifest in multiple ways:
+1. **Data Leakage** - Sensitive drafts/private data exposed to wrong users
+2. **Information Disclosure** - Users can discover unpublished content
+3. **Privacy Violation** - User lists, metadata, hidden records visible
+4. **Compliance Issues** - GDPR/privacy law violations
+
 ### The Solution: Filter by Role
 
 ```ruby
@@ -334,9 +392,28 @@ end
 # Admins see: everything
 ```
 
-### Step 1: Understand Scope Purpose
+Scope provides:
+- **Automatic filtering** - Based on current user's role
+- **Consistent behavior** - Same rules everywhere
+- **Single point of change** - Update scope once, affects all queries
+- **Safety by default** - More restrictive than permissive
 
-A scope automatically filters collections based on what the current user can see.
+### Step 1: Deep Dive: Understanding Scope Purpose
+
+A scope automatically filters collections based on what the current user can see. It's NOT for individual record authorization - that's what `authorize` does.
+
+**Key Distinction:**
+```
+authorize @blog          ← Check if user can perform action on THIS record
+policy_scope(Blog)       ← Filter to show only records user CAN see
+```
+
+**Real-world analogy:**
+```
+Library with thousands of books:
+- authorize checks: "Can THIS person check out THIS book?"
+- policy_scope filters: "Show THIS person only the books they're allowed to see"
+```
 
 **Visual Comparison:**
 
@@ -417,72 +494,52 @@ end
 # Returns: [published_1, published_2]
 ```
 
-### Step 4: Test Scopes
-
-```ruby
-# test/policies/blog_policy_test.rb
-class BlogPolicyScopeTest < ActiveSupport::TestCase
-  test "reader sees only published" do
-    reader = users(:reader)
-    published = blogs(:published)
-    draft = blogs(:draft)
-
-    scope = BlogPolicy::Scope.new(reader, Blog).resolve
-
-    assert scope.include?(published)
-    assert_not scope.include?(draft)
-  end
-
-  test "author sees published and own drafts" do
-    author = users(:author)
-    my_draft = blogs(:my_draft)
-    others_draft = blogs(:others_draft)
-    published = blogs(:published)
-
-    scope = BlogPolicy::Scope.new(author, Blog).resolve
-
-    assert scope.include?(my_draft)
-    assert_not scope.include?(others_draft)
-    assert scope.include?(published)
-  end
-
-  test "admin sees all blogs" do
-    admin = users(:admin)
-    scope = BlogPolicy::Scope.new(admin, Blog).resolve
-
-    assert_equal Blog.count, scope.count
-  end
-end
-```
-
 ---
 
 ## Topic 4: Scope Class Implementation
 
 ### The Scope Class Structure
 
-Every policy can have an inner `Scope` class that filters collections:
+Every policy can have an inner `Scope` class that filters collections. The Scope class is separate from the policy because:
+- It works with collections, not individual records
+- It inherits from `ApplicationPolicy::Scope` which provides the structure
+- The `resolve` method must always return an ActiveRecord scope, not an array
 
 ```ruby
 class BlogPolicy < ApplicationPolicy
-  # Regular authorization methods
+  # AUTHORIZATION: Check if user can perform action on individual record
   def update?
     own_blog? || user&.admin?
   end
 
-  # Scope class for filtering collections
+  # FILTERING: Filter which records the user can see
   class Scope < ApplicationPolicy::Scope
     def initialize(user, scope)
-      @user = user
-      @scope = scope
+      @user = user           # Current user
+      @scope = scope         # The ActiveRecord scope (Blog, User, etc.)
     end
 
     def resolve
-      # Must return ActiveRecord scope (not array!)
+      # MUST return ActiveRecord scope (not array!)
+      # This scope will be used in controllers:
+      # @blogs = policy_scope(Blog).order(created_at: :desc)
       raise NotImplementedError
     end
   end
 end
+```
+
+**What happens when you call policy_scope:**
+```
+controller: @blogs = policy_scope(Blog)
+  ↓
+Pundit: BlogPolicy::Scope.new(current_user, Blog).resolve
+  ↓
+Your resolve method returns: Blog.where(published: true)
+  ↓
+Controller gets: Blog.where(published: true) (still an ActiveRecord scope!)
+  ↓
+Can chain: @blogs.order(created_at: :desc).page(1)
 ```
 
 ### Step 1: Implement Basic Scope
@@ -500,6 +557,8 @@ end
 
 ### Step 2: Add Role-Based Filtering
 
+Role-based filtering uses conditional logic to return different results for different user types:
+
 ```ruby
 class BlogPolicy < ApplicationPolicy
   class Scope < ApplicationPolicy::Scope
@@ -507,27 +566,68 @@ class BlogPolicy < ApplicationPolicy
       # Different filtering based on user role
       case user
       when nil
-        # Guests see only published
+        # Guests (not logged in) see only published
         scope.where(published: true)
 
       when ->(u) { u.reader? }
-        # Readers see only published
+        # Readers see only published blogs
         scope.where(published: true)
 
       when ->(u) { u.author? }
-        # Authors see published + their own drafts
+        # Authors see:
+        # 1. Published blogs (everyone's)
+        # 2. Their own drafts
         scope.where("published = true OR user_id = ?", user.id)
 
       when ->(u) { u.admin? }
-        # Admins see everything
+        # Admins see all blogs regardless of status
         scope.all
 
       else
+        # Fallback for unknown roles
         scope.where(published: true)
       end
     end
   end
 end
+```
+
+**How the different results look in practice:**
+
+Database has: 5 blogs (3 published, 2 drafts)
+
+```
+Anonymous user loads /blogs
+  BlogPolicy::Scope.new(nil, Blog).resolve
+  ↓ Returns: Blog.where(published: true)
+  ↓ Result: [published_1, published_2, published_3] = 3 blogs
+
+Reader user loads /blogs
+  BlogPolicy::Scope.new(reader, Blog).resolve
+  ↓ Returns: Blog.where(published: true)
+  ↓ Result: [published_1, published_2, published_3] = 3 blogs
+
+Author (owns 1 draft) loads /blogs
+  BlogPolicy::Scope.new(author, Blog).resolve
+  ↓ Returns: Blog.where("published = true OR user_id = ?", 42)
+  ↓ Result: [published_1, published_2, published_3, their_draft_1] = 4 blogs
+
+Admin loads /blogs
+  BlogPolicy::Scope.new(admin, Blog).resolve
+  ↓ Returns: Blog.all
+  ↓ Result: [published_1, published_2, published_3, draft_1, draft_2] = 5 blogs
+```
+
+**Understanding the lambda syntax:**
+```ruby
+when ->(u) { u.reader? }
+     └─ Lambda ─┘ └────────┘
+        function  returns true if user is a reader
+
+# Alternative (more explicit):
+when ->(u) { u.role == 'reader' }
+
+# Your case statement matches different TYPES of users
 ```
 
 ### Step 3: Critical Rule: Return Scope, Not Array
@@ -624,23 +724,6 @@ class BlogPolicy < ApplicationPolicy
       user&.author?
     end
   end
-end
-```
-
-### Step 6: Test Complex Scope
-
-```ruby
-test "moderator sees published and flagged" do
-  moderator = users(:moderator)
-  published = blogs(:published)
-  flagged = blogs(:flagged_for_review)
-  draft = blogs(:draft)
-
-  scope = BlogPolicy::Scope.new(moderator, Blog).resolve
-
-  assert scope.include?(published)
-  assert scope.include?(flagged)
-  assert_not scope.include?(draft)
 end
 ```
 
@@ -757,82 +840,131 @@ end
   .order(created_at: :desc)
 ```
 
-### Step 6: Test in Controller
-
-```ruby
-# test/controllers/blogs_controller_test.rb
-test "reader sees only published blogs" do
-  reader = users(:reader)
-  published = blogs(:published)
-  draft = blogs(:draft)
-
-  sign_in reader
-  get blogs_path
-
-  assert_includes assigns(:blogs), published
-  assert_not_includes assigns(:blogs), draft
-end
-
-test "author sees published and own drafts" do
-  author = users(:author)
-  my_draft = blogs(:my_draft)
-  others_draft = blogs(:others_draft)
-
-  sign_in author
-  get blogs_path
-
-  assert_includes assigns(:blogs), my_draft
-  assert_not_includes assigns(:blogs), others_draft
-end
-```
-
 ---
 
 ## Topic 6: Headless Policies (Policies Without Model)
 
 ### What Are Headless Policies?
 
-Policies for actions that don't belong to a specific model:
-- Admin dashboards
-- Settings pages
-- Feature toggles
-- System-wide actions
+"Headless" means the policy doesn't protect a specific model/record. Instead, it protects system-wide actions or sections:
+
+**Traditional policies** (have a model):
+```
+UserPolicy protects User records
+  - Can you view THIS user?
+  - Can you edit THIS user?
+
+BlogPolicy protects Blog records
+  - Can you delete THIS blog?
+  - Can you publish THIS blog?
+```
+
+**Headless policies** (no specific model):
+```
+AdminPolicy protects admin section
+  - Can you access admin dashboard?
+  - Can you manage users (all of them)?
+  - Can you view analytics?
+
+DashboardPolicy protects dashboard features
+  - Can you view your stats?
+  - Can you access beta features?
+
+FeaturePolicy protects features globally
+  - Is dark mode enabled for this user?
+  - Can this user access export?
+```
+
+### Use Cases for Headless Policies:
+
+1. **Admin sections** - Access to admin panel, manage system
+2. **Feature toggles** - Which features does user have access to?
+3. **Global actions** - Actions that affect the system
+4. **User preferences** - Should this page show for this user?
+5. **Settings/Configuration** - Access to sensitive settings
 
 ### Step 1: Create a Headless Policy
+
+The key difference from regular policies:
+- `initialize(user)` takes only the user, not a record
+- Set `@record = nil` explicitly
+- Methods check global permissions, not record ownership
 
 ```ruby
 # app/policies/admin_policy.rb
 class AdminPolicy < ApplicationPolicy
-  # Override initialize - no record parameter
+  # Override initialize - note: no record parameter!
   def initialize(user)
     @user = user
-    @record = nil  # No specific record
+    @record = nil  # No specific record being protected
   end
 
-  # Authorization methods
+  # Each method checks if user can perform this admin action
   def dashboard?
+    # Can user see admin dashboard?
     user&.admin?
   end
 
   def manage_users?
+    # Can user manage any users?
     user&.admin?
   end
 
   def view_audit_logs?
+    # Can user see all system logs?
     user&.admin?
   end
 
   def view_settings?
+    # Can user access system settings?
     user&.admin? || user&.moderator?
   end
 
-  def authorization_message
-    "Only administrators can access this section"
+  def authorization_message(action = nil)
+    case action
+    when :dashboard
+      "You do not have permission to access the admin dashboard."
+    when :manage_users
+      "You do not have permission to manage users."
+    else
+      "You are not authorized to access this admin section"
+    end
   end
 end
 ```
 
+**Why use headless policies instead of just checking in the controller?**
+
+```ruby
+# ❌ BAD: Authorization logic scattered in controllers
+class Admin::DashboardController < ApplicationController
+  def index
+    if !current_user&.admin?
+      redirect_to root_path, alert: "Not authorized"
+      return
+    end
+    # ... load data
+  end
+end
+
+# ✅ GOOD: Centralized authorization in policy
+class Admin::DashboardController < ApplicationController
+  def index
+    authorize :admin, :dashboard?  # Consistent, reusable
+    # ... load data
+  end
+end
+```
+
+Benefits:
+- **Consistency** - All admin checks use same policy
+- **Single source of truth** - Change once, affects everywhere
+- **Testability** - Easy to test authorization logic
+- **Reusability** - Same checks from views, controllers, helpers
+
 ### Step 2: Use in Controller
+
+The syntax for headless policies is different - pass a symbol as the "record":
 
 ```ruby
 # app/controllers/admin/dashboard_controller.rb
@@ -849,10 +981,56 @@ class Admin::DashboardController < ApplicationController
   private
 
   def authorize_admin
-    # Pass symbol as record to headless policy
+    # Syntax: authorize :symbol, :method?
+    # Pundit will:
+    # 1. Look for AdminPolicy (inferred from symbol)
+    # 2. Instantiate: AdminPolicy.new(current_user)
+    # 3. Call: policy.dashboard?
+    # 4. Raise error if false
     authorize :admin, :dashboard?
   end
 end
+```
+
+**How Pundit resolves the symbol to policy:**
+```
+authorize :admin, :dashboard?
+    ↓
+Pundit infers: AdminPolicy (capitalize + add "Policy")
+    ↓
+Creates: AdminPolicy.new(current_user)
+    ↓
+Calls: policy.dashboard?
+    ↓
+If returns false: Raise Pundit::NotAuthorizedError
+If returns true: Continue normally
+```
+
+**Alternative: Inline authorization**
+```ruby
+class Admin::DashboardController < ApplicationController
+  def index
+    authorize :admin, :dashboard?  # Can go directly in action too
+    # ... rest of action
+  end
+end
+```
+
+**What happens if user is not authorized:**
+```
+User (not admin) tries to access /admin
+    ↓
+authorize :admin, :dashboard? runs
+    ↓
+AdminPolicy.new(user).dashboard? returns false
+    ↓
+Pundit::NotAuthorizedError raised
+    ↓
+ApplicationController#user_not_authorized catches it
+    ↓
+policy.authorization_message(:dashboard) returns custom message
+    ↓
+Flash message shown, redirected to referrer
 ```
 
 ### Step 3: Another Example - DashboardPolicy
@@ -920,29 +1098,7 @@ end
 <% end %>
 ```
 
-### Step 5: Test Headless Policies
-
-```ruby
-# test/policies/admin_policy_test.rb
-test "admin can access dashboard" do
-  admin = users(:admin)
-  policy = AdminPolicy.new(admin)
-  assert policy.dashboard?
-end
-
-test "reader cannot access dashboard" do
-  reader = users(:reader)
-  policy = AdminPolicy.new(reader)
-  assert_not policy.dashboard?
-end
-
-test "authorization message" do
-  policy = AdminPolicy.new(nil)
-  assert_includes policy.authorization_message, "administrator"
-end
-```
-
-### Step 6: Use in Views
+### Step 5: Use in Views
 
 ```erb
 <!-- app/views/shared/_navigation.html.erb -->
@@ -965,6 +1121,42 @@ end
 
 ## Topic 7: Displaying Elements Conditionally in Views
 
+### What Does policy() Do in Views?
+
+The `policy()` helper lets you check permissions directly in your ERB templates. It returns the policy instance for the given record or symbol.
+
+```erb
+<!-- For a record: call policy method on that record -->
+<%= policy(@blog).edit? %>
+  ↓ Returns true/false
+  ↓ Can use in if/unless blocks
+
+<!-- For a headless policy: use symbol -->
+<%= policy(:admin).dashboard? %>
+  ↓ Returns true/false
+  ↓ Can use in if/unless blocks
+```
+
+### Why Check Permissions in Views?
+
+1. **User experience** - Don't show buttons users can't use
+2. **Clean UI** - Hide UI elements they have no access to
+3. **Reduce confusion** - User sees only relevant options
+4. **Safety net** - Even if controller check fails, UI doesn't show it
+
+**Important:** View checks are NOT security!
+
+```ruby
+# ⚠️ CRITICAL: Never rely on view checks for security!
+# Someone could:
+# 1. Inspect element and make requests directly
+# 2. Disable JavaScript and submit forms
+# 3. Use curl/postman to bypass your UI
+
+# ✅ ALWAYS protect in controller/policy
+# View checks are just UX improvements
+```
+
 ### Step 1: Use policy() Helper in Views
 
 ```erb
@@ -973,7 +1165,7 @@ end
   <%= link_to "Edit", edit_blog_path(@blog) %>
 <% end %>
 
-<!-- Check multiple permissions -->
+<!-- Check multiple permissions (OR condition) -->
 <% if policy(@blog).edit? || policy(@blog).destroy? %>
   <div class="action-buttons">
     <% if policy(@blog).edit? %>
@@ -985,9 +1177,28 @@ end
     <% end %>
   </div>
 <% end %>
+
+<!-- Check multiple permissions (AND condition) -->
+<% if policy(@blog).edit? && policy(@blog).publish? %>
+  <!-- Only show if user can both edit AND publish -->
+  <%= link_to "Edit & Publish", edit_blog_path(@blog) %>
+<% end %>
+```
+
+**Behind the scenes:**
+```
+<%= policy(@blog).edit? %>
+   ↓
+Pundit calls: BlogPolicy.new(current_user, @blog).edit?
+   ↓
+Returns: true or false based on policy logic
+   ↓
+Used in if/unless/&&/|| conditions
 ```
 
 ### Step 2: Blog Index - Show Action Buttons Conditionally
+
+Real-world example showing how different users see different options:
 
 ```erb
 <!-- app/views/blogs/index.html.erb -->
@@ -996,7 +1207,8 @@ end
     <div class="blog-card">
       <h2><%= link_to blog.title, blog_path(blog) %></h2>
 
-      <!-- Show status badge if allowed -->
+      <!-- Show status badge (Draft/Published) if user can see it -->
+      <!-- Custom policy method checks if user should see publication status -->
       <% if policy(blog).view_published_attribute? %>
         <span class="status <%= blog.published? ? 'published' : 'draft' %>">
           <%= blog.published? ? 'Published' : 'Draft' %>
@@ -1006,15 +1218,15 @@ end
       <p><%= truncate(blog.description, length: 150) %></p>
 
       <div class="actions">
-        <!-- View button always available -->
+        <!-- View button always available (all authorized users can view) -->
         <%= link_to "View", blog_path(blog), class: 'btn-primary' %>
 
-        <!-- Edit button - show only if authorized -->
+        <!-- Edit button - show only to blog owner or admin -->
         <% if policy(blog).edit? %>
           <%= link_to "Edit", edit_blog_path(blog), class: 'btn-warning' %>
         <% end %>
 
-        <!-- Delete button - show only if authorized -->
+        <!-- Delete button - show only to blog owner or admin -->
         <% if policy(blog).destroy? %>
           <%= link_to "Delete", blog_path(blog),
               method: :delete,
@@ -1025,6 +1237,32 @@ end
     </div>
   <% end %>
 </div>
+```
+
+**User experiences:**
+
+```
+Anonymous/Guest visiting /blogs
+├── Sees published blogs only
+├── Only has "View" button
+└── No Edit/Delete buttons shown
+
+Reader signed in visiting /blogs
+├── Sees published blogs only
+├── Only has "View" button
+└── No Edit/Delete buttons shown
+
+Author (blog owner) visiting /blogs
+├── Sees published blogs + their own drafts
+├── Own blogs show: View, Edit, Delete buttons
+├── Others' blogs show: View button only
+└── Draft status visible on their own blogs
+
+Admin visiting /blogs
+├── Sees all blogs (published + drafts)
+├── Every blog shows: View, Edit, Delete buttons
+├── Can see which are drafts
+└── Can edit/delete any blog
 ```
 
 ### Step 3: User Profile - Separated Published and Drafts
@@ -1186,9 +1424,12 @@ end
 
 ### Step 6: Helper Methods for Complex Logic
 
+For complex permission checks, create helper methods to keep views clean:
+
 ```ruby
 # app/helpers/blogs_helper.rb
 module BlogsHelper
+  # Helpers make views more readable and maintainable
   def show_edit_button?(blog)
     policy(blog).edit?
   end
@@ -1204,28 +1445,97 @@ module BlogsHelper
   def show_status_badge?(blog)
     policy(blog).view_published_attribute?
   end
+
+  # More complex logic example
+  def show_admin_actions?(blog)
+    policy(blog).edit? && policy(blog).destroy?
+  end
+
+  # Helper for role-based display
+  def can_manage_blog?(blog)
+    policy(blog).edit? || policy(blog).destroy?
+  end
 end
 ```
 
-Use in views:
+**Why use helpers?**
 
 ```erb
-<% if show_edit_button?(@blog) %>
-  <%= link_to "Edit", edit_blog_path(@blog) %>
+<!-- ❌ View becomes cluttered with policy checks -->
+<% if policy(@blog).edit? || policy(@blog).destroy? %>
+  <% if policy(@blog).view_published_attribute? %>
+    <% if policy(@blog).edit? %>
+      <!-- nested ifs are hard to read -->
+    <% end %>
+  <% end %>
 <% end %>
 
-<% if show_delete_button?(@blog) %>
-  <%= link_to "Delete", blog_path(@blog), method: :delete %>
-<% end %>
-
-<% if show_status_badge?(@blog) %>
-  <span class="status"><%= @blog.published? ? 'Published' : 'Draft' %></span>
+<!-- ✅ Helpers make it readable -->
+<% if can_manage_blog?(@blog) %>
+  <% if show_status_badge?(@blog) %>
+    <% if show_edit_button?(@blog) %>
+      <!-- Much clearer intent -->
+    <% end %>
+  <% end %>
 <% end %>
 ```
+
+**Using helpers in views:**
+
+```erb
+<!-- app/views/blogs/show.html.erb -->
+<div class="blog-actions">
+  <!-- Use helpers instead of inline policy checks -->
+  <% if show_edit_button?(@blog) %>
+    <%= link_to "Edit", edit_blog_path(@blog), class: 'btn btn-primary' %>
+  <% end %>
+
+  <% if show_delete_button?(@blog) %>
+    <%= link_to "Delete", blog_path(@blog),
+        method: :delete,
+        data: { confirm: "Sure?" },
+        class: 'btn btn-danger' %>
+  <% end %>
+
+  <% if show_publish_button?(@blog) %>
+    <%= link_to "Publish", publish_blog_path(@blog),
+        method: :post,
+        class: 'btn btn-success' %>
+  <% end %>
+</div>
+```
+
+**Benefits of helper methods:**
+- **Readability** - View code is more semantic
+- **Reusability** - Use same helper in multiple views
+- **Maintainability** - Change logic once, affects all uses
+- **Testability** - Easier to test helpers than inline logic
+- **Consistency** - Same checks everywhere
 
 ---
 
 ## Topic 8: Using policy(@post).update? in Views
+
+### Understanding policy() and Method Names
+
+The `policy()` helper returns the policy instance, so you can call any method on it. The method names typically follow Rails conventions:
+
+```erb
+<!-- Standard CRUD methods (from ApplicationPolicy) -->
+<% if policy(@blog).index? %>    <!-- Can list blogs? -->
+<% if policy(@blog).show? %>     <!-- Can view this blog? -->
+<% if policy(@blog).create? %>   <!-- Can create blog? -->
+<% if policy(@blog).new? %>      <!-- Can see create form? -->
+<% if policy(@blog).update? %>   <!-- Can edit this blog? -->
+<% if policy(@blog).edit? %>     <!-- Can see edit form? -->
+<% if policy(@blog).destroy? %>  <!-- Can delete this blog? -->
+
+<!-- Custom methods you define in policy -->
+<% if policy(@blog).publish? %>        <!-- Custom method -->
+<% if policy(@blog).own_blog? %>       <!-- Custom method -->
+<% if policy(@blog).share? %>          <!-- Custom method -->
+<% if policy(@blog).archive? %>        <!-- Custom method -->
+```
 
 ### Step 1: Direct Policy Method Calls
 
@@ -1241,16 +1551,44 @@ Use in views:
   <%= link_to "Delete", blog_path(@blog), method: :delete %>
 <% end %>
 
-<!-- Check custom methods -->
+<!-- Check custom methods defined in policy -->
 <% if policy(@blog).publish? %>
   <%= link_to "Publish", publish_blog_path(@blog), method: :post %>
 <% end %>
+
+<!-- Check attribute-level permissions -->
+<% if policy(@blog).view_published_attribute? %>
+  <span class="status">
+    <%= @blog.published? ? 'Published' : 'Draft' %>
+  </span>
+<% end %>
+
+<!-- Check custom helper method -->
+<% if policy(@blog).can_be_archived? %>
+  <%= link_to "Archive", archive_blog_path(@blog), method: :post %>
+<% end %>
+```
+
+**Policy methods are checked BEFORE rendering:**
+
+```
+View loads: <% if policy(@blog).edit? %>
+  ↓
+Pundit calls: BlogPolicy.new(current_user, @blog).edit?
+  ↓
+Policy checks: user.admin? || record.user == user
+  ↓
+Returns: true or false
+  ↓
+Template either shows or hides the link
 ```
 
 ### Step 2: Combine Multiple Policy Checks
 
+You can combine policy checks with logical operators (AND, OR) to create more complex authorization UI logic:
+
 ```erb
-<!-- Show action buttons only if user can do something -->
+<!-- OR condition: Show if user can EITHER edit OR delete -->
 <% if policy(@blog).update? || policy(@blog).destroy? %>
   <div class="admin-actions">
     <% if policy(@blog).update? %>
@@ -1265,63 +1603,206 @@ Use in views:
     <% end %>
   </div>
 <% end %>
+
+<!-- AND condition: Show if user can BOTH edit AND publish -->
+<% if policy(@blog).update? && policy(@blog).publish? %>
+  <div class="advanced-actions">
+    <%= link_to "Edit & Publish", edit_publish_blog_path(@blog) %>
+  </div>
+<% end %>
+
+<!-- Complex condition: Show advanced options to owners/admins -->
+<% if policy(@blog).update? %>
+  <div class="editor-options">
+    <% if policy(@blog).destroy? %>
+      <%= link_to "Delete", blog_path(@blog), method: :delete %>
+    <% end %>
+
+    <% if policy(@blog).publish? %>
+      <%= link_to "Publish", publish_blog_path(@blog), method: :post %>
+    <% end %>
+
+    <% if policy(@blog).archive? %>
+      <%= link_to "Archive", archive_blog_path(@blog), method: :post %>
+    <% end %>
+  </div>
+<% end %>
+```
+
+**Real-world example: Blog card with conditional actions**
+
+```erb
+<div class="blog-card">
+  <h3><%= @blog.title %></h3>
+
+  <!-- Everyone can view published blogs -->
+  <%= link_to "View", blog_path(@blog) %>
+
+  <!-- Only show admin/edit section if user can do anything -->
+  <% if policy(@blog).update? || policy(@blog).destroy? %>
+    <div class="card-actions">
+      <!-- Edit only if allowed -->
+      <% if policy(@blog).update? %>
+        <%= link_to "✏️", edit_blog_path(@blog), title: 'Edit' %>
+      <% end %>
+
+      <!-- Delete only if allowed -->
+      <% if policy(@blog).destroy? %>
+        <%= link_to "🗑️", blog_path(@blog), method: :delete, title: 'Delete' %>
+      <% end %>
+
+      <!-- More actions if owner -->
+      <% if policy(@blog).own_blog? %>
+        <div class="owner-actions">
+          <% if policy(@blog).publish? %>
+            <%= link_to "Publish", publish_blog_path(@blog), method: :post %>
+          <% end %>
+
+          <% if policy(@blog).share? %>
+            <%= link_to "Share", share_blog_path(@blog) %>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+</div>
 ```
 
 ### Step 3: Real Example - Blog Show Page
 
+A complete blog show page demonstrating all types of policy checks:
+
 ```erb
 <!-- app/views/blogs/show.html.erb -->
 <div class="blog-container">
-  <h1><%= @blog.title %></h1>
+  <div class="blog-header">
+    <h1><%= @blog.title %></h1>
 
-  <!-- Status badge -->
-  <% if policy(@blog).view_published_attribute? %>
-    <span class="badge <%= @blog.published? ? 'badge-success' : 'badge-warning' %>">
-      <%= @blog.published? ? 'Published' : 'Draft' %>
-    </span>
-  <% end %>
-
-  <p class="blog-content">
-    <%= @blog.description %>
-  </p>
-
-  <!-- User info -->
-  <div class="blog-meta">
-    By <strong><%= @blog.user.username %></strong>
-    on <%= @blog.created_at.strftime("%B %d, %Y") %>
+    <!-- Status badge - only show to authorized viewers -->
+    <!-- Only blog owner and admin should see Draft status -->
+    <% if policy(@blog).view_published_attribute? %>
+      <span class="badge <%= @blog.published? ? 'badge-success' : 'badge-warning' %>">
+        <%= @blog.published? ? 'Published' : 'Draft' %>
+      </span>
+    <% end %>
   </div>
 
-  <!-- Action buttons - show based on authorization -->
+  <div class="blog-content">
+    <p><%= @blog.description %></p>
+  </div>
+
+  <!-- Metadata about the blog -->
+  <div class="blog-meta">
+    <p>
+      By <strong><%= @blog.user.username %></strong>
+      on <%= @blog.created_at.strftime("%B %d, %Y") %>
+    </p>
+  </div>
+
+  <!-- Action buttons - visibility based on authorization -->
   <div class="blog-actions">
-    <!-- View button always available -->
+    <!-- Navigation: Back button - always available -->
     <%= link_to "Back to Blogs", blogs_path, class: 'btn btn-secondary' %>
 
-    <!-- Edit button - only if policy allows -->
+    <!-- Only show action buttons if user can do something -->
+    <% if policy(@blog).update? || policy(@blog).destroy? %>
+      <div class="editor-actions">
+
+        <!-- Edit button - only if user can update -->
+        <% if policy(@blog).update? %>
+          <%= link_to "Edit", edit_blog_path(@blog),
+              class: 'btn btn-primary',
+              title: 'Edit this blog post' %>
+        <% end %>
+
+        <!-- Delete button - only if user can destroy -->
+        <% if policy(@blog).destroy? %>
+          <%= link_to "Delete", blog_path(@blog),
+              method: :delete,
+              data: { confirm: "Are you sure? This cannot be undone." },
+              class: 'btn btn-danger',
+              title: 'Permanently delete this blog post' %>
+        <% end %>
+
+      </div>
+    <% end %>
+
+    <!-- Custom actions: Publish/Unpublish -->
+    <!-- These check custom policy methods -->
     <% if policy(@blog).update? %>
-      <%= link_to "Edit", edit_blog_path(@blog), class: 'btn btn-primary' %>
+      <div class="publish-actions">
+        <% if !@blog.published? && policy(@blog).publish? %>
+          <%= link_to "Publish Post", publish_blog_path(@blog),
+              method: :post,
+              class: 'btn btn-success' %>
+        <% elsif @blog.published? && policy(@blog).unpublish? %>
+          <%= link_to "Unpublish Post", unpublish_blog_path(@blog),
+              method: :post,
+              class: 'btn btn-warning' %>
+        <% end %>
+      </div>
     <% end %>
 
-    <!-- Delete button - only if policy allows -->
-    <% if policy(@blog).destroy? %>
-      <%= link_to "Delete", blog_path(@blog),
-          method: :delete,
-          data: { confirm: "Delete this blog?" },
-          class: 'btn btn-danger' %>
-    <% end %>
-
-    <!-- Publish button - only if policy allows -->
-    <% if policy(@blog).publish? %>
-      <%= link_to "Publish", publish_blog_path(@blog),
-          method: :post,
-          class: 'btn btn-success' %>
-    <% end %>
   </div>
 </div>
 ```
 
-### Step 4: Inline Conditions
+**Authorization flow for different users:**
+
+```
+Anonymous visits /blogs/1 (published blog)
+├── policy(@blog).view_published_attribute? → false
+│   └── Status badge NOT shown
+├── policy(@blog).update? → false
+│   └── Edit button NOT shown
+├── policy(@blog).destroy? → false
+│   └── Delete button NOT shown
+└── Result: Only sees content, no action buttons
+
+Reader visits /blogs/1 (published blog)
+├── policy(@blog).view_published_attribute? → false
+│   └── Status badge NOT shown
+├── policy(@blog).update? → false
+│   └── Edit button NOT shown
+├── policy(@blog).destroy? → false
+│   └── Delete button NOT shown
+└── Result: Same as anonymous - can only read
+
+Author visits their own blog
+├── policy(@blog).view_published_attribute? → true
+│   └── Status badge SHOWN (can see Draft/Published)
+├── policy(@blog).update? → true
+│   └── Edit button SHOWN
+├── policy(@blog).destroy? → true
+│   └── Delete button SHOWN
+├── policy(@blog).publish? → true
+│   └── Publish button SHOWN (if draft)
+└── Result: Full control over their own post
+
+Admin visits any blog
+├── policy(@blog).view_published_attribute? → true
+│   └── Status badge SHOWN
+├── policy(@blog).update? → true
+│   └── Edit button SHOWN
+├── policy(@blog).destroy? → true
+│   └── Delete button SHOWN
+├── policy(@blog).publish? → true
+│   └── Publish button SHOWN
+└── Result: Full control over any post
+```
+
+### Step 4: Inline Conditions & Advanced Patterns
+
+Use ternary operators and inline conditions for simple permission checks:
 
 ```erb
+<!-- Ternary operator: Show different content based on permission -->
+<div class="blog-title">
+  <%= policy(@blog).update? ?
+      link_to('Edit', edit_blog_path(@blog)) :
+      content_tag(:span, 'Readonly') %>
+</div>
+
 <!-- Toggle between view and edit based on policy -->
 <div class="blog-title">
   <% if policy(@blog).update? %>
@@ -1334,6 +1815,67 @@ Use in views:
     <h1><%= @blog.title %></h1>
   <% end %>
 </div>
+
+<!-- Show different links based on permission -->
+<div class="action-links">
+  <% if policy(@user).update? %>
+    <%= link_to 'Edit Profile', edit_user_path(@user) %>
+  <% elsif policy(@user).show? %>
+    <%= link_to 'View Profile', user_path(@user) %>
+  <% else %>
+    <span>Profile not available</span>
+  <% end %>
+</div>
+
+<!-- Conditional CSS classes based on permission -->
+<div class="blog-content <%= 'editable' if policy(@blog).update? %>">
+  <h1><%= @blog.title %></h1>
+  <p><%= @blog.description %></p>
+</div>
+
+<!-- Chain policy checks with conditions -->
+<% if policy(@blog).update? && !@blog.published? %>
+  <!-- Show publish button only if user can edit AND post is unpublished -->
+  <%= link_to "Publish", publish_blog_path(@blog), method: :post %>
+<% end %>
+```
+
+**Pattern: Show admin tools only if user can do something**
+
+```erb
+<!-- Use || (OR) to show if ANY action is available -->
+<% if policy(@user).update? || policy(@user).deactivate? || policy(@user).activate? %>
+  <div class="admin-tools">
+    <% if policy(@user).update? %>
+      <%= link_to 'Edit', edit_user_path(@user) %>
+    <% end %>
+
+    <% if policy(@user).deactivate? && @user.active? %>
+      <%= link_to 'Deactivate', deactivate_user_path(@user), method: :patch %>
+    <% end %>
+
+    <% if policy(@user).activate? && !@user.active? %>
+      <%= link_to 'Activate', activate_user_path(@user), method: :patch %>
+    <% end %>
+  </div>
+<% end %>
+```
+
+**Pattern: Progressively disclosure of features**
+
+```erb
+<!-- Basic level: Can user see this at all? -->
+<% if policy(:feature).dark_mode? %>
+  <div class="theme-controls">
+    <!-- Medium level: Can user enable/disable? -->
+    <% if policy(:feature).configure_theme? %>
+      <%= link_to 'Configure Theme', theme_settings_path %>
+    <% else %>
+      <!-- Read-only view -->
+      <span>Dark mode: <%= @user.dark_mode_enabled? ? 'On' : 'Off' %></span>
+    <% end %>
+  </div>
+<% end %>
 ```
 
 ### Step 5: Conditional CSS Classes
@@ -1358,52 +1900,7 @@ Use in views:
 </style>
 ```
 
-### Step 6: Test Conditional Rendering
-
-```ruby
-# test/views/blogs/show_test.rb
-test "edit button visible to blog owner" do
-  render
-  blog = blogs(:one)
-  owner = blog.user
-
-  sign_in owner
-
-  assert_select "a", text: "Edit"
-end
-
-test "edit button hidden from unauthorized users" do
-  render
-  blog = blogs(:one)
-  reader = users(:reader)
-
-  sign_in reader
-
-  assert_select "a", text: "Edit", count: 0
-end
-
-test "delete button visible to admin" do
-  render
-  blog = blogs(:one)
-  admin = users(:admin)
-
-  sign_in admin
-
-  assert_select "a", text: "Delete"
-end
-
-test "delete button hidden from readers" do
-  render
-  blog = blogs(:one)
-  reader = users(:reader)
-
-  sign_in reader
-
-  assert_select "a", text: "Delete", count: 0
-end
-```
-
-### Step 7: Real Project - Admin User Show Page
+### Step 6: Real Project - Admin User Show Page
 
 ```erb
 <!-- app/views/admin/users/show.html.erb -->
@@ -1546,25 +2043,6 @@ authorize @blog  # ← Topic 1: Error handling
 
 ---
 
-## Testing Checklist
-
-For each authorization feature:
-
-- [ ] Test policy returns `true` for authorized users
-- [ ] Test policy returns `false` for unauthorized users
-- [ ] Test scope includes only authorized records
-- [ ] Test scope excludes unauthorized records
-- [ ] Test controller raises error for unauthorized access
-- [ ] Test error handler shows custom message
-- [ ] Test error handler redirects properly
-- [ ] Test view shows button for authorized user
-- [ ] Test view hides button for unauthorized user
-- [ ] Test headless policy works
-- [ ] Test multiple roles get different data
-- [ ] Test nil user (not logged in) case
-
----
-
 ## Common Mistakes to Avoid
 
 ### ❌ Mistake 1: Using Blog.all without scope
@@ -1605,14 +2083,38 @@ end
 
 | Topic | Purpose | Key Method |
 |-------|---------|-----------|
-| 1 | Catch unauthorized | `rescue_from` |
-| 2 | Explain why denied | `authorization_message` |
+| 1 | Catch unauthorized | `rescue_from Pundit::NotAuthorizedError` |
+| 2 | Explain why denied | `authorization_message(action)` |
 | 3 | Filter collections | `policy_scope(Model)` |
 | 4 | Implement filtering | `Scope#resolve` |
 | 5 | Use in controllers | `policy_scope(Model).order()` |
 | 6 | Non-model auth | `authorize :namespace, :action?` |
 | 7 | Show/hide UI | `<% if policy(@obj).action? %>` |
 | 8 | Direct policy calls | `policy(@post).update?` |
+
+### Topic 2 Implementation Details
+
+**Key Pattern:**
+- Policy methods define what actions are allowed (`:create?`, `:update?`, etc.)
+- `authorization_message(action)` provides user-friendly feedback for each denied action
+- ApplicationController extracts the action from the exception and calls the policy method
+- User sees specific, actionable error messages instead of generic ones
+
+**Exception Flow:**
+```
+authorize @blog
+  ↓ (fails)
+Pundit::NotAuthorizedError raised
+  ├── exception.policy = BlogPolicy instance
+  ├── exception.query = "destroy?"
+  └── exception.record = @blog
+  ↓
+ApplicationController#user_not_authorized catches it
+  ├── Extracts :destroy from "destroy?"
+  ├── Calls policy.authorization_message(:destroy)
+  └── Sets flash[:alert] with specific message
+  ↓
+Redirects with contextual error message
 
 ---
 
@@ -1631,6 +2133,31 @@ end
 - See `PUNDIT_GUIDE.md` for additional patterns
 - [Pundit GitHub](https://github.com/varvet/pundit)
 
+---
+
+## Implementation Status
+
+✅ **Fully Implemented in This Project**
+
+The following Topic 2 features are complete:
+
+- ✅ ApplicationController catches `Pundit::NotAuthorizedError`
+- ✅ Extracts action name from exception.query
+- ✅ BlogPolicy has action-specific authorization messages
+- ✅ UserPolicy has detailed action-specific messages
+- ✅ AdminPolicy (headless) has admin-specific messages
+- ✅ All policies respond to `authorization_message(action)`
+- ✅ Error handler provides contextual feedback
+- ✅ Flash messages guide users on authorization failures
+
+**Project Files:**
+- `app/controllers/application_controller.rb` - Error handler
+- `app/policies/blog_policy.rb` - Blog-specific messages
+- `app/policies/user_policy.rb` - User management messages
+- `app/policies/admin_policy.rb` - Admin section messages
+
+---
+
 **Last Updated:** January 2026
-**Status:** Tutorial & Hands-On Guide
+**Status:** Tutorial & Hands-On Guide with Completed Implementation
 **Difficulty:** Beginner to Intermediate
