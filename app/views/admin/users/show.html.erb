@@ -1,0 +1,94 @@
+<div class="container" style="max-width: 600px; margin: 0 auto; padding: 20px;">
+  <%= link_to "← Back to Users", admin_users_path, style: "text-decoration: none; color: #007bff; margin-bottom: 20px; display: inline-block;" %>
+
+  <div style="border: 1px solid #ddd; padding: 30px; border-radius: 8px; background: white; margin-top: 20px;">
+    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
+      <h1 style="margin: 0;"><%= @user.username %></h1>
+      <span style="background: <%= case @user.role when 'admin' then '#dc3545' when 'author' then '#ffc107' else '#007bff' end %>; color: white; padding: 6px 15px; border-radius: 20px; font-weight: bold;">
+        <%= @user.role.titleize %>
+      </span>
+      <span style="background: <%= @user.active? ? '#28a745' : '#dc3545' %>; color: white; padding: 6px 15px; border-radius: 20px; font-weight: bold;">
+        <%= @user.active? ? 'Active' : 'Inactive' %>
+      </span>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <p style="margin: 0; color: #666; font-size: 14px;">
+        <strong>Email:</strong> <%= @user.email %>
+      </p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <p style="margin: 0; color: #666; font-size: 14px;">
+        <strong>Created:</strong> <%= @user.created_at.strftime('%B %d, %Y %l:%M %p') %>
+      </p>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+      <p style="margin: 0; color: #666; font-size: 14px;">
+        <strong>Last Updated:</strong> <%= @user.updated_at.strftime('%B %d, %Y %l:%M %p') %>
+      </p>
+    </div>
+
+    <% if @user.blogs.any? %>
+      <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
+        <h3 style="margin: 0 0 20px 0;">Posts (<%= @user.blogs.count %>)</h3>
+
+        <!-- Published Posts -->
+        <% published_blogs = @user.blogs.published %>
+        <% if published_blogs.any? %>
+          <div style="margin-bottom: 20px;">
+            <h4 style="margin: 0 0 10px 0; color: #28a745;">Published (<%= published_blogs.count %>)</h4>
+            <div style="display: grid; gap: 10px;">
+              <% published_blogs.each do |blog| %>
+                <div style="border-left: 4px solid #28a745; padding: 12px; background: #f0f9f0; border-radius: 4px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="flex: 1;">
+                      <%= link_to blog.title, blog_path(blog), style: "text-decoration: none; color: #007bff; font-weight: 500;" %>
+                      <span style="background: #28a745; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: bold; margin-left: 8px;">Published</span>
+                    </div>
+                    <small style="color: #999; font-size: 12px;">
+                      <%= blog.created_at.strftime('%b %d, %Y') %>
+                    </small>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+
+        <!-- Draft Posts -->
+        <% draft_blogs = @user.blogs.drafts %>
+        <% if draft_blogs.any? %>
+          <div style="margin-bottom: 20px;">
+            <h4 style="margin: 0 0 10px 0; color: #ffc107;">Drafts (<%= draft_blogs.count %>)</h4>
+            <div style="display: grid; gap: 10px;">
+              <% draft_blogs.each do |blog| %>
+                <div style="border-left: 4px solid #ffc107; padding: 12px; background: #fffbf0; border-radius: 4px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="flex: 1;">
+                      <%= link_to blog.title, blog_path(blog), style: "text-decoration: none; color: #007bff; font-weight: 500;" %>
+                      <span style="background: #ffc107; color: #333; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: bold; margin-left: 8px;">Draft</span>
+                    </div>
+                    <small style="color: #999; font-size: 12px;">
+                      <%= blog.created_at.strftime('%b %d, %Y') %>
+                    </small>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+
+    <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; display: flex; gap: 10px;">
+      <%= link_to "Edit", edit_admin_user_path(@user), style: "background: #ffc107; color: #333; padding: 10px 20px; text-decoration: none; border-radius: 4px;" %>
+      <% if @user.active? && policy(@user).deactivate? %>
+        <%= link_to "Deactivate", deactivate_admin_user_path(@user), method: :patch, data: { turbo_confirm: "Are you sure?" }, style: "background: #dc3545; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;" %>
+      <% elsif !@user.active? && policy(@user).activate? %>
+        <%= link_to "Activate", activate_admin_user_path(@user), method: :patch, style: "background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;" %>
+      <% end %>
+    </div>
+  </div>
+</div>

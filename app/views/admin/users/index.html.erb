@@ -1,0 +1,50 @@
+<div class="container" style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+    <h1 style="margin: 0;">User Management</h1>
+    <%= link_to "← Back", root_path, style: "text-decoration: none; color: #007bff;" %>
+  </div>
+
+  <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+    <thead>
+      <tr style="background: #f8f9fa; border-bottom: 2px solid #ddd;">
+        <th style="padding: 15px; text-align: left; font-weight: bold;">Username</th>
+        <th style="padding: 15px; text-align: left; font-weight: bold;">Email</th>
+        <th style="padding: 15px; text-align: left; font-weight: bold;">Role</th>
+        <th style="padding: 15px; text-align: left; font-weight: bold;">Status</th>
+        <th style="padding: 15px; text-align: left; font-weight: bold;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @users.each do |user| %>
+        <tr style="border-bottom: 1px solid #eee; background: <%= cycle('white', '#f9f9f9') %>;">
+          <td style="padding: 15px;">
+            <%= link_to user.username, admin_user_path(user), style: "text-decoration: none; color: #007bff;" %>
+          </td>
+          <td style="padding: 15px;"><%= user.email %></td>
+          <td style="padding: 15px;">
+            <span style="background: <%= case user.role when 'admin' then '#dc3545' when 'author' then '#ffc107' else '#007bff' end %>; color: white; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold;">
+              <%= user.role.titleize %>
+            </span>
+          </td>
+          <td style="padding: 15px;">
+            <span style="background: <%= user.active? ? '#28a745' : '#dc3545' %>; color: white; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold;">
+              <%= user.active? ? 'Active' : 'Inactive' %>
+            </span>
+          </td>
+          <td style="padding: 15px; display: flex; gap: 8px;">
+            <%= link_to "Edit", edit_admin_user_path(user), style: "background: #ffc107; color: #333; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px;" %>
+            <% if user.active? && policy(user).deactivate? %>
+              <%= link_to "Deactivate", deactivate_admin_user_path(user), method: :patch, data: { turbo_confirm: "Are you sure?" }, style: "background: #dc3545; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px;" %>
+            <% elsif !user.active? && policy(user).activate? %>
+              <%= link_to "Activate", activate_admin_user_path(user), method: :patch, style: "background: #28a745; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px;" %>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <% if @users.empty? %>
+    <p style="text-align: center; color: #666; padding: 40px;">No users found.</p>
+  <% end %>
+</div>

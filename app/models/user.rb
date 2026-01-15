@@ -3,6 +3,7 @@
 # Table name: users
 #
 #  id                     :bigint           not null, primary key
+#  active                 :boolean          default(TRUE), not null
 #  email                  :string           default(""), not null
 #  encrypted_password     :string           default(""), not null
 #  remember_created_at    :datetime
@@ -30,4 +31,25 @@ class User < ApplicationRecord
 
   # Associations
   has_many :blogs, dependent: :destroy
+
+  # Scopes for status
+  scope :active, -> { where(active: true) }
+  scope :inactive, -> { where(active: false) }
+
+  # Instance methods for status
+  def active?
+    active
+  end
+
+  def inactive?
+    !active
+  end
+
+  def deactivate!
+    update(active: false)
+  end
+
+  def activate!
+    update(active: true)
+  end
 end

@@ -4,7 +4,7 @@ class BlogsController < ApplicationController
   before_action :authorize_blog, only: [:edit, :update, :destroy]
 
   def index
-    @blogs = Blog.all.order(created_at: :desc)
+    @blogs = policy_scope(Blog).order(created_at: :desc)
   end
 
   def show
@@ -22,16 +22,24 @@ class BlogsController < ApplicationController
     @blog = current_user.blogs.build(blog_params)
     authorize @blog
 
+    # Set published based on which button was clicked
+    @blog.published = params[:commit] == 'publish'
+
     if @blog.save
-      redirect_to @blog, notice: 'Blog was successfully created.'
+      message = @blog.published? ? 'Blog was successfully published.' : 'Blog was saved as draft.'
+      redirect_to @blog, notice: message
     else
       render :new, status: :unprocessable_entity
     end
   end
 
   def update
+    # Set published based on which button was clicked
+    @blog.published = params[:commit] == 'publish'
+
     if @blog.update(blog_params)
-      redirect_to @blog, notice: 'Blog was successfully updated.'
+      message = @blog.published? ? 'Blog was successfully published.' : 'Blog was saved as draft.'
+      redirect_to @blog, notice: message
     else
       render :edit, status: :unprocessable_entity
     end
@@ -53,6 +61,6 @@ class BlogsController < ApplicationController
   end
 
   def blog_params
-    params.require(:blog).permit(:title, :description)
+    params.require(:blog).permit(:title, :description, :published)
   end
 end

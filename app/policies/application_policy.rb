@@ -36,6 +36,12 @@ class ApplicationPolicy
     false
   end
 
+  # Override in subclasses to provide action-specific error messages
+  # @param action [Symbol] The action being authorized (e.g., :create?, :update?)
+  def authorization_message(action = nil)
+    "You are not authorized to perform this action."
+  end
+
   class Scope
     def initialize(user, scope)
       @user = user

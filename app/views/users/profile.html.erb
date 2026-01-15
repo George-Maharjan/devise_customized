@@ -1,0 +1,106 @@
+<div class="container" style="max-width: 900px; margin: 0 auto; padding: 20px;">
+  <%= link_to "← Back to Home", root_path, style: "text-decoration: none; color: #007bff; margin-bottom: 20px; display: inline-block;" %>
+
+  <div style="background: white; border: 1px solid #ddd; padding: 30px; border-radius: 8px; margin-bottom: 30px;">
+    <h1 style="margin-top: 0; margin-bottom: 10px;"><%= @user.username %></h1>
+    <p style="color: #666; margin: 0; font-size: 14px;"><%= @user.email %></p>
+    <p style="color: #666; margin: 10px 0 0 0; font-size: 14px;">
+      <strong>Role:</strong>
+      <span style="background: <%= case @user.role when 'admin' then '#dc3545' when 'author' then '#ffc107' else '#007bff' end %>; color: white; padding: 2px 10px; border-radius: 3px;">
+        <%= @user.role.titleize %>
+      </span>
+    </p>
+  </div>
+
+  <!-- Published Blogs Section -->
+  <div style="margin-bottom: 30px;">
+    <h2 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+      Published Posts
+      <span style="background: #28a745; color: white; padding: 4px 12px; border-radius: 20px; font-size: 14px; font-weight: bold; margin-left: auto;">
+        <%= @published_blogs.count %>
+      </span>
+    </h2>
+
+    <% if @published_blogs.any? %>
+      <div style="display: grid; gap: 15px;">
+        <% @published_blogs.each do |blog| %>
+          <div style="border: 1px solid #ddd; padding: 20px; border-radius: 8px; background: white;">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+              <div style="flex: 1;">
+                <h3 style="margin: 0 0 8px 0;">
+                  <%= link_to blog.title, blog_path(blog), style: "text-decoration: none; color: #333;" %>
+                </h3>
+                <p style="color: #666; margin: 0 0 12px 0; font-size: 14px;">
+                  <%= truncate(blog.description, length: 150) %>
+                </p>
+                <span style="background: #28a745; color: white; padding: 4px 10px; border-radius: 3px; font-size: 12px; font-weight: bold;">
+                  Published
+                </span>
+              </div>
+              <div style="display: flex; gap: 8px; margin-left: 15px;">
+                <% if policy(blog).edit? %>
+                  <%= link_to "Edit", edit_blog_path(blog), style: "background: #ffc107; color: #333; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px;" %>
+                <% end %>
+                <% if policy(blog).destroy? %>
+                  <%= link_to "Delete", blog_path(blog), data: { turbo_method: :delete, turbo_confirm: "Are you sure?" }, style: "background: #dc3545; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px;" %>
+                <% end %>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    <% else %>
+      <p style="text-align: center; color: #666; padding: 30px; background: #f9f9f9; border-radius: 8px;">
+        No published posts yet.
+      </p>
+    <% end %>
+  </div>
+
+  <!-- Draft Blogs Section -->
+  <div>
+    <h2 style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+      Draft Posts
+      <span style="background: #ffc107; color: #333; padding: 4px 12px; border-radius: 20px; font-size: 14px; font-weight: bold; margin-left: auto;">
+        <%= @draft_blogs.count %>
+      </span>
+    </h2>
+
+    <% if @draft_blogs.any? %>
+      <div style="display: grid; gap: 15px;">
+        <% @draft_blogs.each do |blog| %>
+          <div style="border: 1px solid #ddd; padding: 20px; border-radius: 8px; background: #fffbf0;">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+              <div style="flex: 1;">
+                <h3 style="margin: 0 0 8px 0;">
+                  <%= link_to blog.title, blog_path(blog), style: "text-decoration: none; color: #333;" %>
+                </h3>
+                <p style="color: #666; margin: 0 0 12px 0; font-size: 14px;">
+                  <%= truncate(blog.description, length: 150) %>
+                </p>
+                <span style="background: #ffc107; color: #333; padding: 4px 10px; border-radius: 3px; font-size: 12px; font-weight: bold;">
+                  Draft
+                </span>
+              </div>
+              <div style="display: flex; gap: 8px; margin-left: 15px;">
+                <% if policy(blog).edit? %>
+                  <%= link_to "Edit", edit_blog_path(blog), style: "background: #0077cc; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px;" %>
+                <% end %>
+                <% if policy(blog).destroy? %>
+                  <%= link_to "Delete", blog_path(blog), data: { turbo_method: :delete, turbo_confirm: "Are you sure?" }, style: "background: #dc3545; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px;" %>
+                <% end %>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    <% else %>
+      <p style="text-align: center; color: #666; padding: 30px; background: #f9f9f9; border-radius: 8px;">
+        No draft posts yet. <%= link_to "Create one", new_blog_path, style: "color: #007bff; text-decoration: underline;" %>
+      </p>
+    <% end %>
+  </div>
+
+  <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
+    <%= link_to "Create New Post", new_blog_path, style: "background: #28a745; color: white; padding: 10px 30px; text-decoration: none; border-radius: 4px; display: inline-block;" %>
+  </div>
+</div>

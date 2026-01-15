@@ -1,6 +1,15 @@
 Rails.application.routes.draw do
+  namespace :admin do
+    resources :users do
+      member do
+        patch :deactivate
+        patch :activate
+      end
+    end
+  end
   devise_for :users
 
+  get 'profile', to: 'users#profile', as: :user_profile
   resources :blogs
 
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html

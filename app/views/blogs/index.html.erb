@@ -6,16 +6,23 @@
   <% if @blogs.any? %>
     <% @blogs.each do |blog| %>
       <div style="border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; border-radius: 8px; background: white;">
-        <h2 style="margin-top: 0;">
+        <h2 style="margin-top: 0; display: flex; align-items: center; gap: 10px;">
           <%= link_to blog.title, blog_path(blog), style: "text-decoration: none; color: #333;" %>
+          <% if policy(blog).view_published_attribute? %>
+            <span style="background: <%= blog.published? ? '#28a745' : '#ffc107' %>; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold;">
+              <%= blog.published? ? 'Published' : 'Draft' %>
+            </span>
+          <% end %>
         </h2>
         <p style="color: #666; margin-bottom: 15px;">
           <%= truncate(blog.description, length: 200) %>
         </p>
         <div style="display: flex; gap: 10px;">
           <%= link_to "View", blog_path(blog), style: "color: #007bff; text-decoration: none;" %>
-          <% if blog.user == current_user %>
+          <% if policy(blog).edit? %>
             <%= link_to "Edit", edit_blog_path(blog), style: "color: #ffc107; text-decoration: none;" %>
+          <% end %>
+          <% if policy(blog).destroy? %>
             <%= link_to "Delete", blog_path(blog), data: { turbo_method: :delete, turbo_confirm: "Are you sure?" }, style: "color: #dc3545; text-decoration: none;" %>
           <% end %>
         </div>

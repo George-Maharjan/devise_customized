@@ -4,6 +4,7 @@
 #
 #  id          :bigint           not null, primary key
 #  description :text
+#  published   :boolean
 #  title       :string
 #  created_at  :datetime         not null
 #  updated_at  :datetime         not null
@@ -22,4 +23,17 @@ class Blog < ApplicationRecord
 
   validates :title, presence: true
   validates :description, presence: true
+
+  # Scopes for querying by status
+  scope :published, -> { where(published: true) }
+  scope :drafts, -> { where(published: false) }
+
+  # Instance methods for status checking
+  def draft?
+    !published
+  end
+
+  def published?
+    published
+  end
 end
