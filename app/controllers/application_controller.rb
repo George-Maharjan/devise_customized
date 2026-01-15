@@ -17,8 +17,19 @@ class ApplicationController < ActionController::Base
 
   private
 
-  def user_not_authorized
-    flash[:alert] = "You are not authorized to perform this action."
+  def user_not_authorized(exception)
+    # Extract the action name from the exception query method
+    # e.g., "index?" becomes :index
+    action = exception.query.to_s.gsub('?', '').to_sym if exception.query
+
+    # Get the policy instance and custom message
+    policy = exception.policy
+    if policy && policy.respond_to?(:authorization_message)
+      flash[:alert] = policy.authorization_message(action)
+    else
+      flash[:alert] = "You are not authorized to perform this action."
+    end
+
     redirect_to(request.referrer || root_path)
   end
 end

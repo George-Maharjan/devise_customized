@@ -4,6 +4,21 @@ class BlogPolicy < ApplicationPolicy
     record.user == user
   end
 
+  def authorization_message(action = nil)
+    case action
+    when :show
+      "This blog post is not available for viewing. Only published posts and your own drafts are visible."
+    when :create, :new
+      "You do not have permission to create blogs. Only authors and administrators can create posts."
+    when :update, :edit
+      "You can only edit your own blog posts. Administrators can edit any post."
+    when :destroy
+      "You can only delete your own blog posts. Administrators can delete any post."
+    else
+      "You are not authorized to perform this action on this blog."
+    end
+  end
+
   # Attribute-level access control for published status
   def view_published_attribute?
     true
